@@ -100,13 +100,22 @@ const sonidoError = new Audio("error.mp3");
 function cargarDesdeSheet() {
   const url = document.getElementById("sheetUrl").value;
   if (!url.includes("docs.google.com")) return mostrarMensaje("URL inválida");
+
   const sheetID = url.match(/\/d\/(.*?)(\/|$)/)?.[1];
-  const apiUrl = \`https://docs.google.com/spreadsheets/d/\${sheetID}/gviz/tq?tqx=out:csv\`;
+  const apiUrl = `https://docs.google.com/spreadsheets/d/${sheetID}/gviz/tq?tqx=out:csv`;
+
   fetch(apiUrl)
     .then(res => res.text())
     .then(csv => Papa.parse(csv, { header: true }))
     .then(result => {
-      pedidos = agruparPedidos(result.data);
+      const dataNormalizada = result.data.map(row => ({
+        PEDIDO: row["PEDIDO"]?.trim(),
+        CODIGO: row["CODIGO"]?.trim(),
+        DESCRIPCION: row["DESCRIPCION"]?.trim(),
+        CANTIDAD: parseInt(row["CANTIDAD"]) || 0
+      })).filter(p => p.PEDIDO && p.CODIGO);
+      console.log("Datos normalizados:", dataNormalizada);
+      pedidos = agruparPedidos(dataNormalizada);
       llenarSelect();
     })
     .catch(() => mostrarMensaje("No se pudo cargar el archivo"));
@@ -120,7 +129,7 @@ function agruparPedidos(data) {
     grupos[id].push({
       codigo: row.CODIGO,
       descripcion: row.DESCRIPCION,
-      cantidad: parseInt(row.CANTIDAD),
+      cantidad: row.CANTIDAD,
       escaneados: 0
     });
   });
@@ -148,15 +157,17 @@ function mostrarPedido() {
   const tabla = document.getElementById("pedidoTable");
   tabla.innerHTML = "";
   if (!pedidoActual) return;
+
   const thead = document.createElement("thead");
-  thead.innerHTML = \`<tr><th>Código</th><th>Descripción</th><th>Requerido</th><th>Escaneado</th></tr>\`;
+  thead.innerHTML = `<tr><th>Código</th><th>Descripción</th><th>Requerido</th><th>Escaneado</th></tr>`;
   tabla.appendChild(thead);
+
   const tbody = document.createElement("tbody");
   pedidoActual.forEach(p => {
     const row = document.createElement("tr");
     if (p.escaneados === p.cantidad) row.classList.add("completo");
     else if (p.escaneados > p.cantidad) row.classList.add("exceso");
-    row.innerHTML = \`<td>\${p.codigo}</td><td>\${p.descripcion}</td><td>\${p.cantidad}</td><td>\${p.escaneados}</td>\`;
+    row.innerHTML = `<td>${p.codigo}</td><td>${p.descripcion}</td><td>${p.cantidad}</td><td>${p.escaneados}</td>`;
     tbody.appendChild(row);
   });
   tabla.appendChild(tbody);
@@ -167,13 +178,18 @@ document.getElementById("barcodeInput").addEventListener("keypress", function (e
     const codigo = e.target.value.trim();
     e.target.value = "";
     if (!codigo || !pedidoActual) return;
+
     const producto = pedidoActual.find(p => p.codigo === codigo);
     if (producto) {
       const cantidad = parseInt(document.getElementById("multiplicador").value) || 1;
       producto.escaneados += cantidad;
-      sonidoOk.pause(); sonidoOk.currentTime = 0; sonidoOk.play().catch(() => {});
+      sonidoOk.pause();
+      sonidoOk.currentTime = 0;
+      sonidoOk.play().catch(e => console.warn("No se pudo reproducir ok.mp3:", e));
     } else {
-      sonidoError.pause(); sonidoError.currentTime = 0; sonidoError.play().catch(() => {});
+      sonidoError.pause();
+      sonidoError.currentTime = 0;
+      sonidoError.play().catch(e => console.warn("No se pudo reproducir error.mp3:", e));
       mostrarMensaje("Código no encontrado");
     }
     mostrarPedido();
@@ -184,6 +200,7 @@ function exportarResumen() {
   if (!pedidoActual) return;
   const filas = pedidoActual.map(p => [p.codigo, p.descripcion, p.cantidad, p.escaneados]);
   const csv = ["CODIGO,DESCRIPCION,CANTIDAD,ESCANEADOS"].concat(filas.map(f => f.join(","))).join("\n");
+
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -203,8 +220,8 @@ function verHistorial() {
   const div = document.getElementById("historial");
   historial = JSON.parse(localStorage.getItem("historial")) || [];
   div.innerHTML = historial.map(entry => {
-    const lista = entry.pedido.map(p => \`\${p.codigo}: \${p.escaneados}/\${p.cantidad}\`).join("<br>");
-    return \`<div><strong>\${entry.fecha}</strong><br>\${lista}</div><hr>\`;
+    const lista = entry.pedido.map(p => `${p.codigo}: ${p.escaneados}/${p.cantidad}`).join("<br>");
+    return `<div><strong>${entry.fecha}</strong><br>${lista}</div><hr>`;
   }).join("");
 }
 
